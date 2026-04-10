@@ -1,0 +1,15 @@
+{
+  "short_name": "EHBO-App",
+  "name": "EHBO Kennis en Diagnose Tool",
+  "icons": [
+    {
+      "src": "https://flaticon.com",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#ff0000",
+  "background_color": "#ffffff"
+}
