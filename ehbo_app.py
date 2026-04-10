@@ -2,6 +2,16 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
+# Injecteer de manifest link
+st.markdown(
+    f"""
+    <link rel="manifest" href="https://github.io">
+    """,
+    unsafe_allow_html=True
+)
+
+st.set_page_config(page_title="EHBO-Expert")
+
 # Pagina configuratie
 st.set_page_config(page_title="EHBO Expert Toets", page_icon="🚑", layout="centered")
 
