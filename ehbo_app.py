@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import random
 
 # Injecteer de manifest link
 st.markdown(
@@ -18,10 +19,26 @@ st.set_page_config(page_title="EHBO Expert Toets", page_icon="🚑", layout="cen
 # Verbinding maken met Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# ... (st.set_config en conn blijven hetzelfde) ...
+
 def laad_data():
-    # Haal de data op uit de sheet
     df = conn.read(ttl="1m")
-    return df.dropna(subset=['type', 'v']) # Verwijder lege rijen
+    vragen = df.dropna(subset=['type', 'v']).to_dict('records')
+    # Hussel de volgorde van de lijst met vragen
+    random.shuffle(vragen) 
+    return vragen
+
+if menu == "📝 Doe de Quiz":
+    # Zorg dat de husseling alleen gebeurt als de quiz start
+    if 'vragen_hussel' not in st.session_state or st.button("Hussel vragen opnieuw"):
+        st.session_state.vragen_hussel = laad_data()
+        st.session_state.index = 0
+        st.session_state.score = 0
+        st.session_state.klaar = False
+        
+    vragen = st.session_state.vragen_hussel
+    # ... (rest van de quiz-logica gebruikt nu 'vragen' uit de session_state) ...
+
 
 def voeg_vraag_toe(nieuwe_vraag):
     bestaande_data = conn.read()
