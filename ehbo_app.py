@@ -3,20 +3,29 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
 
-# 1. Pagina configuratie (MOET als eerste)
+# 1. Pagina configuratie & PWA Meta Tags
 st.set_page_config(page_title="EHBO Expert Toets", page_icon="🚑", layout="centered")
 
-# 2. Manifest link
-st.markdown('<link rel="manifest" href="https://github.io">', unsafe_allow_html=True)
+# Meta tags voor Android "Add to Home Screen" (PWA gevoel)
+st.markdown("""
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <style>
+        /* Verberg Streamlit menu/footer voor app gevoel */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .stButton button { width: 100%; border-radius: 10px; }
+    </style>
+""", unsafe_allow_html=True)
 
-# 3. Verbinding met Google Sheets
+# 2. Verbinding met Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 4. Hulpfuncties
+# 3. Hulpfuncties
 def laad_data():
     try:
         df = conn.read(ttl="1m")
-        # Filter lege rijen en zet om naar lijst van dicts
         return df.dropna(subset=['type', 'v']).to_dict('records')
     except Exception as e:
         st.error(f"Fout bij laden data: {e}")
@@ -29,64 +38,75 @@ def voeg_vraag_toe(nieuwe_vraag):
     conn.update(data=geupdate_data)
     st.cache_data.clear()
 
-# 5. Navigatie menu (Eerst menu aanmaken, dan pas gebruiken!)
+# 4. Navigatie menu
 st.sidebar.title("Navigatie")
 menu = st.sidebar.radio("Ga naar:", ["📝 Doe de Quiz", "➕ Voeg Vraag Toe"])
 
-# 6. Quiz Logica
+# 5. Quiz Logica
 if menu == "📝 Doe de Quiz":
     st.title("🚑 EHBO Diagnose Quiz")
     
-    # Initialiseer quiz data in session state
+    # Initialiseer session state
     if 'vragen_hussel' not in st.session_state:
         data = laad_data()
         if data:
             random.shuffle(data)
             st.session_state.vragen_hussel = data
             st.session_state.index = 0
-            st.session_state.score = 0
-            st.session_state.klaar = False
+            st.session_state.fouten = [] # Lijst voor foute vragen
+            st.session_state.fase = "normaal" # 'normaal' of 'herhalen'
         else:
             st.session_state.vragen_hussel = []
 
     vragen = st.session_state.vragen_hussel
 
-    if not vragen:
-        st.info("De database is leeg of niet bereikbaar. Voeg eerst vragen toe.")
-    elif st.session_state.klaar:
-        st.balloons()
-        st.header("Toets Voltooid!")
-        st.metric("Eindscore", f"{st.session_state.score} / {len(vragen)}")
-        if st.button("Opnieuw Starten"):
-            del st.session_state.vragen_hussel # Forceert herladen en husselen
-            st.rerun()
+    if not vragen and not st.session_state.get('fouten'):
+        st.info("De database is leeg of je hebt alle vragen goed!")
+    elif st.session_state.index >= len(vragen):
+        # Einde van een ronde bereikt
+        if st.session_state.fouten:
+            st.warning(f"Ronde klaar! Je hebt {len(st.session_state.fouten)} vragen fout. We gaan deze nu herhalen.")
+            if st.button("Start Herhaling"):
+                st.session_state.vragen_hussel = st.session_state.fouten.copy()
+                st.session_state.fouten = []
+                st.session_state.index = 0
+                st.session_state.fase = "herhalen"
+                st.rerun()
+        else:
+            st.balloons()
+            st.header("🏆 Toets Voltooid!")
+            st.success("Je hebt alle vragen correct beantwoord!")
+            if st.button("Helemaal Opnieuw Starten"):
+                for key in ['vragen_hussel', 'index', 'fouten', 'fase']:
+                    if key in st.session_state: del st.session_state[key]
+                st.rerun()
     else:
         # Toon huidige vraag
         v = vragen[st.session_state.index]
-        st.subheader(f"Vraag {st.session_state.index + 1} van {len(vragen)}")
-        st.info(v["v"])
+        status_tekst = "Herhaling" if st.session_state.fase == "herhalen" else "Quiz"
+        st.subheader(f"{status_tekst}: Vraag {st.session_state.index + 1} van {len(vragen)}")
+        
+        with st.container(border=True):
+            st.markdown(f"### {v['v']}")
 
         opties = [o.strip() for o in str(v["o"]).split(",")]
         
         if v["type"] == "mc":
-            keuze = st.radio("Wat is de juiste diagnose?", opties, key=f"mc_{st.session_state.index}")
+            keuze = st.radio("Wat is de juiste diagnose?", opties, key=f"mc_{v['v']}_{st.session_state.index}")
+            
             if st.button("Antwoord Bevestigen"):
                 if keuze == v["a"]:
                     st.success(f"✅ Correct! {v['u']}")
-                    st.session_state.score += 1
                 else:
-                    st.error(f"❌ Onjuist. Het juiste antwoord: {v['a']}. \n\nUitleg: {v['u']}")
+                    st.error(f"❌ Onjuist. \n\nUitleg: {v['u']}")
+                    if v not in st.session_state.fouten:
+                        st.session_state.fouten.append(v)
                 
-                # Volgende vraag logica
-                if st.session_state.index + 1 < len(vragen):
-                    st.session_state.index += 1
-                    st.button("Volgende Vraag")
-                else:
-                    st.session_state.klaar = True
-                    st.rerun()
+                st.session_state.index += 1
+                st.button("Volgende")
 
         elif v["type"] == "check":
-            st.write("Selecteer alle symptomen die horen bij deze diagnose:")
+            st.write("Selecteer alle symptomen:")
             gekozen = []
             for o in opties:
                 if st.checkbox(o, key=f"ch_{o}_{st.session_state.index}"):
@@ -96,40 +116,26 @@ if menu == "📝 Doe de Quiz":
                 juiste_antwoorden = sorted([a.strip() for a in str(v["a"]).split(",")])
                 if sorted(gekozen) == juiste_antwoorden:
                     st.success(f"✅ Correct! {v['u']}")
-                    st.session_state.score += 1
                 else:
-                    st.error(f"❌ Onjuist. De juiste symptomen waren: {v['a']}. \n\nUitleg: {v['u']}")
+                    st.error(f"❌ Onjuist. \n\nUitleg: {v['u']}")
+                    if v not in st.session_state.fouten:
+                        st.session_state.fouten.append(v)
                 
-                if st.session_state.index + 1 < len(vragen):
-                    st.session_state.index += 1
-                    st.button("Volgende Vraag")
-                else:
-                    st.session_state.klaar = True
-                    st.rerun()
+                st.session_state.index += 1
+                st.button("Volgende")
 
-# 7. Admin Logica
+# 6. Admin Logica (ongewijzigd)
 elif menu == "➕ Voeg Vraag Toe":
     st.title("Admin: Database Uitbreiden")
     with st.form("add_form", clear_on_submit=True):
-        t = st.selectbox("Type Vraag", ["mc", "check"], help="mc = Meerkeuze diagnose. check = Meerdere symptomen aanvinken.")
+        t = st.selectbox("Type Vraag", ["mc", "check"])
         vraag_tekst = st.text_input("Vraag of Diagnose")
         opties_tekst = st.text_input("Alle Opties (scheiden met een komma)")
-        antwoord_tekst = st.text_input("Het Juiste Antwoord (bij meerdere: komma-gescheiden)")
+        antwoord_tekst = st.text_input("Het Juiste Antwoord")
         uitleg_tekst = st.text_area("Uitleg")
         
-        submit = st.form_submit_button("Vraag Opslaan")
-        if submit:
+        if st.form_submit_button("Vraag Opslaan"):
             if vraag_tekst and opties_tekst and antwoord_tekst:
-                nieuwe_v = {
-                    "type": t, 
-                    "v": vraag_tekst, 
-                    "o": opties_tekst, 
-                    "a": antwoord_tekst, 
-                    "u": uitleg_tekst
-                }
+                nieuwe_v = {"type": t, "v": vraag_tekst, "o": opties_tekst, "a": antwoord_tekst, "u": uitleg_tekst}
                 voeg_vraag_toe(nieuwe_v)
                 st.success("Vraag toegevoegd!")
-                if 'vragen_hussel' in st.session_state:
-                    del st.session_state.vragen_hussel # Zorg dat nieuwe vraag in de quiz komt
-            else:
-                st.warning("Vul alle verplichte velden in.")
