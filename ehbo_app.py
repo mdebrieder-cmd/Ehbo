@@ -13,8 +13,8 @@ st.markdown(f"""
         <meta name="application-name" content="EHBO Expert">
         
         <!-- Het icoon voor Android/iOS -->
-        <link rel="apple-touch-icon" href="https://flaticon.com">
-        <link rel="icon" sizes="192x192" href="https://flaticon.com">
+        <link rel="apple-touch-icon" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
+        <link rel="icon" sizes="192x192" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
         
         <!-- Zorgt dat het fullscreen opent zonder browserbalk -->
         <meta name="mobile-web-app-capable" content="yes">
