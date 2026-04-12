@@ -3,20 +3,22 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
 
-# 1. Pagina configuratie & PWA Meta Tags
-st.set_page_config(page_title="EHBO Expert Toets", page_icon="🚑", layout="centered")
+st.set_page_config(page_title="EHBO Expert", page_icon="🚑")
 
-# Meta tags voor Android "Add to Home Screen" (PWA gevoel)
-st.markdown("""
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
-    <style>
-        /* Verberg Streamlit menu/footer voor app gevoel */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        .stButton button { width: 100%; border-radius: 10px; }
-    </style>
+# Injectie voor Android App-instellingen
+st.markdown(f"""
+    <head>
+        <!-- De naam die op het startscherm komt -->
+        <meta name="apple-mobile-web-app-title" content="EHBO Expert">
+        <meta name="application-name" content="EHBO Expert">
+        
+        <!-- Het icoon voor Android/iOS -->
+        <link rel="apple-touch-icon" href="https://flaticon.com">
+        <link rel="icon" sizes="192x192" href="https://flaticon.com">
+        
+        <!-- Zorgt dat het fullscreen opent zonder browserbalk -->
+        <meta name="mobile-web-app-capable" content="yes">
+    </head>
 """, unsafe_allow_html=True)
 
 # 2. Verbinding met Google Sheets
