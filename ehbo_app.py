@@ -6,19 +6,16 @@ import random
 st.set_page_config(page_title="EHBO Expert", page_icon="🚑")
 
 # Injectie voor Android App-instellingen
-st.markdown(f"""
-    <head>
-        <!-- De naam die op het startscherm komt -->
-        <meta name="apple-mobile-web-app-title" content="EHBO Expert">
-        <meta name="application-name" content="EHBO Expert">
-        
-        <!-- Het icoon voor Android/iOS -->
-        <link rel="apple-touch-icon" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
-        <link rel="icon" sizes="192x192" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
-        
-        <!-- Zorgt dat het fullscreen opent zonder browserbalk -->
-        <meta name="mobile-web-app-capable" content="yes">
-    </head>
+st.markdown("""
+    <div style="display:none">
+        <head>
+            <meta name="apple-mobile-web-app-title" content="EHBO Expert">
+            <meta name="application-name" content="EHBO Expert">
+            <link rel="apple-touch-icon" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
+            <link rel="icon" sizes="192x192" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
+            <meta name="mobile-web-app-capable" content="yes">
+        </head>
+    </div>
 """, unsafe_allow_html=True)
 
 # 2. Verbinding met Google Sheets
