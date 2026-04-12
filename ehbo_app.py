@@ -3,7 +3,11 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
 
-st.set_page_config(page_title="EHBO Expert", page_icon="🚑")
+st.set_page_config(
+    page_title="EHBO Expert", # De naam die in de browser/app komt
+    page_icon="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg", # Directe link naar je icoon
+    layout="centered"
+)
 
 # Injectie voor Android App-instellingen
 st.markdown("""
