@@ -5,7 +5,6 @@ import random
 import re
 
 # 1. Pagina configuratie
-# Let op: Gebruik de RAW URL van GitHub voor het icoon voor een correcte weergave
 icon_url = "https://githubusercontent.com"
 
 st.set_page_config(
@@ -27,7 +26,6 @@ st.markdown(f"""
         </head>
     </div>
     <style>
-        /* Mobielvriendelijke styling */
         .stButton button {{
             width: 100%;
             border-radius: 12px;
@@ -44,7 +42,6 @@ st.markdown(f"""
             margin-bottom: 10px;
             border: 1px solid #e0e0e0;
         }}
-        /* Feedback expander styling */
         .stExpander {{
             border: 2px solid #ff4b4b;
             border-radius: 12px;
@@ -73,32 +70,32 @@ def voeg_vraag_toe(nieuwe_vraag):
     st.cache_data.clear()
 
 def formatteer_uitleg(tekst):
-    """Schoont de uitleg op en maakt een strakke genummerde lijst zonder lege regels."""
+    """Vormt uitleg om en ondersteunt meerdere stappenplannen per vraag."""
     if not tekst or pd.isna(tekst):
         return "Geen uitleg beschikbaar."
     
     tekst = str(tekst).strip()
     
-    # Maak een duidelijke kop van 'Stappen:'
-    tekst = tekst.replace("Stappen:", "\n\n### 📋 Stappenplan\n")
+    # 1. Herken koppen zoals "Stappen bij Shock:" of "Stappen:" en maak ze Markdown-koppen
+    tekst = re.sub(r"(Stappen.*?:)", r"\n\n### 📋 \1\n", tekst)
     
-    # Forceer een nieuwe regel voor elk getal gevolgd door een punt (1. t/m 9.)
-    # Dit voorkomt dat stappen achter elkaar geplakt blijven
+    # 2. Zorg dat elk getal (1. t/m 9.) op een nieuwe regel begint
     for i in range(1, 10):
         zoek_term = f"{i}."
         if zoek_term in tekst:
             tekst = tekst.replace(zoek_term, f"\n{i}. ")
     
-    # Verwijder overtollige spaties en dubbele witregels die 'lege stappen' veroorzaken
-    regels = [line.strip() for line in tekst.split('\n') if line.strip()]
-    
-    # Voeg extra witregel toe voor de lijst-start (Markdown vereiste)
+    # 3. Opschonen en lijsten bouwen
+    regels = [line.strip() for line in tekst.split('\n')]
     geformatteerd = ""
     for r in regels:
-        if re.match(r"^\d+\.", r):
+        if not r: continue
+        if re.match(r"^\d+\.", r): # Lijst-item
             geformatteerd += f"\n{r}"
-        else:
-            geformatteerd += f"\n\n{r}" if "###" in r else f" {r}"
+        elif "###" in r: # Kop
+            geformatteerd += f"\n{r}"
+        else: # Normale tekst
+            geformatteerd += f"\n\n{r}" if len(geformatteerd) > 0 else r
             
     return geformatteerd.strip()
 
@@ -110,7 +107,6 @@ menu = st.sidebar.radio("Navigatie:", ["📝 Doe de Quiz", "➕ Voeg Vraag Toe"]
 if menu == "📝 Doe de Quiz":
     st.title("EHBO Kennis Toets")
     
-    # Initialisatie session state
     if 'vragen_hussel' not in st.session_state:
         data = laad_data()
         if data:
@@ -128,7 +124,6 @@ if menu == "📝 Doe de Quiz":
     if not vragen and not st.session_state.get('fouten'):
         st.info("De database is leeg.")
     
-    # Ronde voltooid
     elif st.session_state.index >= len(vragen):
         if st.session_state.fouten:
             st.warning(f"Je hebt {len(st.session_state.fouten)} vragen onjuist beantwoord. Laten we deze herhalen.")
@@ -148,7 +143,6 @@ if menu == "📝 Doe de Quiz":
                     if key in st.session_state: del st.session_state[key]
                 st.rerun()
     
-    # Interface voor de vragen
     else:
         v = vragen[st.session_state.index]
         titel = "🔄 Herhaling" if st.session_state.fase == "herhalen" else "📖 Toets"
@@ -220,10 +214,10 @@ elif menu == "➕ Voeg Vraag Toe":
         vraag_tekst = st.text_input("Vraagstelling")
         opties_tekst = st.text_input("Opties (komma-gescheiden)")
         antwoord_tekst = st.text_input("Juist antwoord (komma-gescheiden bij meerdere)")
-        uitleg_tekst = st.text_area("Uitleg (gebruik 1. 2. 3. voor stappen)")
+        uitleg_tekst = st.text_area("Uitleg (gebruik 'Stappen bij [Diagnose]:' voor meerdere lijsten)")
         
         if st.form_submit_button("Vraag Opslaan"):
             if vraag_tekst and opties_tekst and antwoord_tekst:
                 nieuwe_v = {"type": t, "v": vraag_tekst, "o": opties_tekst, "a": antwoord_tekst, "u": uitleg_tekst}
                 voeg_vraag_toe(nieuwe_v)
-                st.success("Vraag succesvol toegevoegd aan de lijst!")
+                st.success("Vraag succesvol toegevoegd!")
