@@ -3,23 +3,32 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
 
+# 1. Pagina configuratie
+# Let op: De icoon URL moet de RAW versie zijn van GitHub voor weergave
+icon_url = "https://githubusercontent.com"
+
 st.set_page_config(
-    page_title="EHBO Expert", # De naam die in de browser/app komt
-    page_icon="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg", # Directe link naar je icoon
+    page_title="EHBO Expert",
+    page_icon="🚑",
     layout="centered"
 )
 
-# Injectie voor Android App-instellingen
-st.markdown("""
+# Injectie voor Android App-instellingen & Styling
+st.markdown(f"""
     <div style="display:none">
         <head>
             <meta name="apple-mobile-web-app-title" content="EHBO Expert">
             <meta name="application-name" content="EHBO Expert">
-            <link rel="apple-touch-icon" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
-            <link rel="icon" sizes="192x192" href="http://github.com/mdebrieder-cmd/Ehbo/blob/main/ehbo_icon.jpeg">
+            <link rel="apple-touch-icon" href="{icon_url}">
+            <link rel="icon" sizes="192x192" href="{icon_url}">
             <meta name="mobile-web-app-capable" content="yes">
         </head>
     </div>
+    <style>
+        .stButton button {{ width: 100%; border-radius: 10px; height: 3em; background-color: #f0f2f6; }}
+        .stRadio div[role='radiogroup'] {{ background-color: #f9f9f9; padding: 15px; border-radius: 10px; }}
+        .stExpander {{ border: 1px solid #ff4b4b; border-radius: 10px; }}
+    </style>
 """, unsafe_allow_html=True)
 
 # 2. Verbinding met Google Sheets
@@ -47,98 +56,116 @@ menu = st.sidebar.radio("Ga naar:", ["📝 Doe de Quiz", "➕ Voeg Vraag Toe"])
 
 # 5. Quiz Logica
 if menu == "📝 Doe de Quiz":
-    st.title("🚑 EHBO Diagnose Quiz")
+    st.title("🚑 EHBO Expert Toets")
     
-    # Initialiseer session state
     if 'vragen_hussel' not in st.session_state:
         data = laad_data()
         if data:
             random.shuffle(data)
             st.session_state.vragen_hussel = data
             st.session_state.index = 0
-            st.session_state.fouten = [] # Lijst voor foute vragen
-            st.session_state.fase = "normaal" # 'normaal' of 'herhalen'
+            st.session_state.fouten = []
+            st.session_state.fase = "normaal"
+            st.session_state.beantwoord = False
         else:
             st.session_state.vragen_hussel = []
 
     vragen = st.session_state.vragen_hussel
 
     if not vragen and not st.session_state.get('fouten'):
-        st.info("De database is leeg of je hebt alle vragen goed!")
+        st.info("De database is leeg.")
     elif st.session_state.index >= len(vragen):
-        # Einde van een ronde bereikt
         if st.session_state.fouten:
-            st.warning(f"Ronde klaar! Je hebt {len(st.session_state.fouten)} vragen fout. We gaan deze nu herhalen.")
+            st.warning(f"Ronde klaar! Je hebt {len(st.session_state.fouten)} vragen gemist. We herhalen deze nu.")
             if st.button("Start Herhaling"):
                 st.session_state.vragen_hussel = st.session_state.fouten.copy()
                 st.session_state.fouten = []
                 st.session_state.index = 0
                 st.session_state.fase = "herhalen"
+                st.session_state.beantwoord = False
                 st.rerun()
         else:
             st.balloons()
             st.header("🏆 Toets Voltooid!")
-            st.success("Je hebt alle vragen correct beantwoord!")
             if st.button("Helemaal Opnieuw Starten"):
-                for key in ['vragen_hussel', 'index', 'fouten', 'fase']:
+                for key in ['vragen_hussel', 'index', 'fouten', 'fase', 'beantwoord']:
                     if key in st.session_state: del st.session_state[key]
                 st.rerun()
     else:
-        # Toon huidige vraag
         v = vragen[st.session_state.index]
-        status_tekst = "Herhaling" if st.session_state.fase == "herhalen" else "Quiz"
-        st.subheader(f"{status_tekst}: Vraag {st.session_state.index + 1} van {len(vragen)}")
+        status = "🔄 Herhaling" if st.session_state.fase == "herhalen" else "📖 Toets"
+        st.caption(f"{status} | Vraag {st.session_state.index + 1} van {len(vragen)}")
         
         with st.container(border=True):
-            st.markdown(f"### {v['v']}")
+            st.markdown(f"**{v['v']}**")
 
         opties = [o.strip() for o in str(v["o"]).split(",")]
         
+        # Logica voor MC vragen
         if v["type"] == "mc":
-            keuze = st.radio("Wat is de juiste diagnose?", opties, key=f"mc_{v['v']}_{st.session_state.index}")
+            keuze = st.radio("Maak een keuze:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
             
-            if st.button("Antwoord Bevestigen"):
+            if not st.session_state.beantwoord:
+                if st.button("Antwoord Bevestigen"):
+                    st.session_state.beantwoord = True
+                    st.rerun()
+            else:
                 if keuze == v["a"]:
-                    st.success(f"✅ Correct! {v['u']}")
+                    st.success("✅ Correct!")
                 else:
-                    st.error(f"❌ Onjuist. \n\nUitleg: {v['u']}")
+                    st.error(f"❌ Onjuist. Het juiste antwoord was: **{v['a']}**")
                     if v not in st.session_state.fouten:
                         st.session_state.fouten.append(v)
                 
-                st.session_state.index += 1
-                st.button("Volgende")
+                with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
+                    st.write(v["u"])
+                
+                if st.button("Volgende Vraag ➡️"):
+                    st.session_state.index += 1
+                    st.session_state.beantwoord = False
+                    st.rerun()
 
+        # Logica voor Checkbox vragen
         elif v["type"] == "check":
-            st.write("Selecteer alle symptomen:")
+            st.write("Selecteer alle juiste opties:")
             gekozen = []
-            for o in opties:
-                if st.checkbox(o, key=f"ch_{o}_{st.session_state.index}"):
+            for i, o in enumerate(opties):
+                if st.checkbox(o, key=f"ch_{i}_{st.session_state.index}", disabled=st.session_state.beantwoord):
                     gekozen.append(o)
             
-            if st.button("Antwoord Bevestigen"):
+            if not st.session_state.beantwoord:
+                if st.button("Antwoord Bevestigen"):
+                    st.session_state.beantwoord = True
+                    st.rerun()
+            else:
                 juiste_antwoorden = sorted([a.strip() for a in str(v["a"]).split(",")])
                 if sorted(gekozen) == juiste_antwoorden:
-                    st.success(f"✅ Correct! {v['u']}")
+                    st.success("✅ Correct!")
                 else:
-                    st.error(f"❌ Onjuist. \n\nUitleg: {v['u']}")
+                    st.error(f"❌ Onjuist. Juiste opties: **{v['a']}**")
                     if v not in st.session_state.fouten:
                         st.session_state.fouten.append(v)
                 
-                st.session_state.index += 1
-                st.button("Volgende")
+                with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
+                    st.write(v["u"])
+                
+                if st.button("Volgende Vraag ➡️"):
+                    st.session_state.index += 1
+                    st.session_state.beantwoord = False
+                    st.rerun()
 
-# 6. Admin Logica (ongewijzigd)
+# 6. Admin Logica
 elif menu == "➕ Voeg Vraag Toe":
-    st.title("Admin: Database Uitbreiden")
+    st.title("Database Uitbreiden")
     with st.form("add_form", clear_on_submit=True):
         t = st.selectbox("Type Vraag", ["mc", "check"])
-        vraag_tekst = st.text_input("Vraag of Diagnose")
-        opties_tekst = st.text_input("Alle Opties (scheiden met een komma)")
-        antwoord_tekst = st.text_input("Het Juiste Antwoord")
-        uitleg_tekst = st.text_area("Uitleg")
+        vraag_tekst = st.text_input("Vraagstelling")
+        opties_tekst = st.text_input("Opties (komma-gescheiden)")
+        antwoord_tekst = st.text_input("Juiste antwoord(en)")
+        uitleg_tekst = st.text_area("Uitleg + Stappenplan")
         
-        if st.form_submit_button("Vraag Opslaan"):
+        if st.form_submit_button("Opslaan in Google Sheets"):
             if vraag_tekst and opties_tekst and antwoord_tekst:
                 nieuwe_v = {"type": t, "v": vraag_tekst, "o": opties_tekst, "a": antwoord_tekst, "u": uitleg_tekst}
                 voeg_vraag_toe(nieuwe_v)
-                st.success("Vraag toegevoegd!")
+                st.success("Vraag succesvol toegevoegd!")
