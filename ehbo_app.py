@@ -70,32 +70,35 @@ def voeg_vraag_toe(nieuwe_vraag):
     st.cache_data.clear()
 
 def formatteer_uitleg(tekst):
-    """Vormt uitleg om en ondersteunt meerdere stappenplannen per vraag."""
+    """Vormt uitleg om en negeert getallen in '112' bij het maken van lijsten."""
     if not tekst or pd.isna(tekst):
         return "Geen uitleg beschikbaar."
     
     tekst = str(tekst).strip()
     
-    # 1. Herken koppen zoals "Stappen bij Shock:" of "Stappen:" en maak ze Markdown-koppen
+    # 1. Herken koppen zoals "Stappen bij Shock:" en maak ze Markdown-koppen
     tekst = re.sub(r"(Stappen.*?:)", r"\n\n### 📋 \1\n", tekst)
     
-    # 2. Zorg dat elk getal (1. t/m 9.) op een nieuwe regel begint
-    for i in range(1, 10):
-        zoek_term = f"{i}."
-        if zoek_term in tekst:
-            tekst = tekst.replace(zoek_term, f"\n{i}. ")
+    # 2. Slimme herkenning van lijstitems:
+    # Zoekt naar cijfer + punt + spatie, maar alleen als er GEEN ander cijfer direct voor staat (zoals bij 112)
+    tekst = re.sub(r"(?<!\d)([1-9])\.\s+", r"\n\1. ", tekst)
     
     # 3. Opschonen en lijsten bouwen
     regels = [line.strip() for line in tekst.split('\n')]
     geformatteerd = ""
     for r in regels:
         if not r: continue
-        if re.match(r"^\d+\.", r): # Lijst-item
+        # Als regel begint met "1. " t/m "9. "
+        if re.match(r"^[1-9]\.\s", r): 
             geformatteerd += f"\n{r}"
-        elif "###" in r: # Kop
+        elif "###" in r:
             geformatteerd += f"\n{r}"
-        else: # Normale tekst
-            geformatteerd += f"\n\n{r}" if len(geformatteerd) > 0 else r
+        else:
+            # Voeg normale tekst toe met juiste spacing
+            if geformatteerd.endswith("\n"):
+                geformatteerd += r
+            else:
+                geformatteerd += f"\n\n{r}" if len(geformatteerd) > 0 else r
             
     return geformatteerd.strip()
 
@@ -126,7 +129,7 @@ if menu == "📝 Doe de Quiz":
     
     elif st.session_state.index >= len(vragen):
         if st.session_state.fouten:
-            st.warning(f"Je hebt {len(st.session_state.fouten)} vragen onjuist beantwoord. Laten we deze herhalen.")
+            st.warning(f"Ronde voltooid. Je hebt {len(st.session_state.fouten)} vragen onjuist. We herhalen deze nu.")
             if st.button("🔄 Start Herhaling"):
                 st.session_state.vragen_hussel = st.session_state.fouten.copy()
                 st.session_state.fouten = []
@@ -137,8 +140,8 @@ if menu == "📝 Doe de Quiz":
         else:
             st.balloons()
             st.header("🏆 Toets Voltooid!")
-            st.success("Gefeliciteerd! Je hebt alle EHBO-scenario's correct afgehandeld.")
-            if st.button("🏁 Opnieuw beginnen"):
+            st.success("Gefeliciteerd! Je hebt alles correct beantwoord.")
+            if st.button("🏁 Helemaal Opnieuw Beginnen"):
                 for key in ['vragen_hussel', 'index', 'fouten', 'fase', 'beantwoord']:
                     if key in st.session_state: del st.session_state[key]
                 st.rerun()
@@ -153,7 +156,6 @@ if menu == "📝 Doe de Quiz":
 
         opties = [o.strip() for o in str(v["o"]).split(",")]
         
-        # Logica: Meerkeuze
         if v["type"] == "mc":
             keuze = st.radio("Selecteer het juiste antwoord:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
             
@@ -172,12 +174,11 @@ if menu == "📝 Doe de Quiz":
                 with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
                     st.markdown(formatteer_uitleg(v["u"]))
                 
-                if st.button("Volgende ➡️"):
+                if st.button("Volgende Vraag ➡️"):
                     st.session_state.index += 1
                     st.session_state.beantwoord = False
                     st.rerun()
 
-        # Logica: Checkboxen
         elif v["type"] == "check":
             st.write("Selecteer alle opties die van toepassing zijn:")
             gekozen = []
@@ -201,7 +202,7 @@ if menu == "📝 Doe de Quiz":
                 with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
                     st.markdown(formatteer_uitleg(v["u"]))
                 
-                if st.button("Volgende ➡️"):
+                if st.button("Volgende Vraag ➡️"):
                     st.session_state.index += 1
                     st.session_state.beantwoord = False
                     st.rerun()
