@@ -2,9 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
+import re
 
 # 1. Pagina configuratie
-# Let op: Gebruik de RAW URL van GitHub voor het icoon
+# Let op: Gebruik de RAW URL van GitHub voor het icoon voor een correcte weergave
 icon_url = "https://githubusercontent.com"
 
 st.set_page_config(
@@ -26,7 +27,7 @@ st.markdown(f"""
         </head>
     </div>
     <style>
-        /* Mobielvriendelijke knoppen */
+        /* Mobielvriendelijke styling */
         .stButton button {{
             width: 100%;
             border-radius: 12px;
@@ -34,20 +35,20 @@ st.markdown(f"""
             font-weight: bold;
             text-transform: uppercase;
             border: 2px solid #ff4b4b;
-            transition: 0.3s;
+            transition: 0.2s;
         }}
-        /* Styling voor radio buttons en checkboxes */
         .stRadio div[role='radiogroup'], .stCheckbox {{
             background-color: #f1f3f6;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 10px;
+            border: 1px solid #e0e0e0;
         }}
         /* Feedback expander styling */
         .stExpander {{
             border: 2px solid #ff4b4b;
             border-radius: 12px;
-            background-color: #fff5f5;
+            background-color: #fffafa;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -71,26 +72,45 @@ def voeg_vraag_toe(nieuwe_vraag):
     conn.update(data=geupdate_data)
     st.cache_data.clear()
 
-def formatteer_stappenplan(tekst):
-    """Vormt platte tekst om naar een genummerde Markdown lijst."""
-    tekst = str(tekst)
-    if "1." in tekst:
-        tekst = tekst.replace("Stappen:", "### 📋 Stappenplan:\n")
-        for i in range(1, 10):
-            old = f"{i}."
-            new = f"\n{i}."
-            tekst = tekst.replace(old, new)
-    return tekst
+def formatteer_uitleg(tekst):
+    """Schoont de uitleg op en maakt een strakke genummerde lijst zonder lege regels."""
+    if not tekst or pd.isna(tekst):
+        return "Geen uitleg beschikbaar."
+    
+    tekst = str(tekst).strip()
+    
+    # Maak een duidelijke kop van 'Stappen:'
+    tekst = tekst.replace("Stappen:", "\n\n### 📋 Stappenplan\n")
+    
+    # Forceer een nieuwe regel voor elk getal gevolgd door een punt (1. t/m 9.)
+    # Dit voorkomt dat stappen achter elkaar geplakt blijven
+    for i in range(1, 10):
+        zoek_term = f"{i}."
+        if zoek_term in tekst:
+            tekst = tekst.replace(zoek_term, f"\n{i}. ")
+    
+    # Verwijder overtollige spaties en dubbele witregels die 'lege stappen' veroorzaken
+    regels = [line.strip() for line in tekst.split('\n') if line.strip()]
+    
+    # Voeg extra witregel toe voor de lijst-start (Markdown vereiste)
+    geformatteerd = ""
+    for r in regels:
+        if re.match(r"^\d+\.", r):
+            geformatteerd += f"\n{r}"
+        else:
+            geformatteerd += f"\n\n{r}" if "###" in r else f" {r}"
+            
+    return geformatteerd.strip()
 
 # 5. Navigatie menu
 st.sidebar.title("🚑 EHBO Expert")
-menu = st.sidebar.radio("Menu:", ["📝 Doe de Quiz", "➕ Voeg Vraag Toe"])
+menu = st.sidebar.radio("Navigatie:", ["📝 Doe de Quiz", "➕ Voeg Vraag Toe"])
 
 # 6. Quiz Logica
 if menu == "📝 Doe de Quiz":
-    st.title("Toets je EHBO Kennis")
+    st.title("EHBO Kennis Toets")
     
-    # Initialisatie
+    # Initialisatie session state
     if 'vragen_hussel' not in st.session_state:
         data = laad_data()
         if data:
@@ -106,12 +126,12 @@ if menu == "📝 Doe de Quiz":
     vragen = st.session_state.vragen_hussel
 
     if not vragen and not st.session_state.get('fouten'):
-        st.info("De database is leeg. Voeg eerst vragen toe.")
+        st.info("De database is leeg.")
     
-    # Einde van de ronde
+    # Ronde voltooid
     elif st.session_state.index >= len(vragen):
         if st.session_state.fouten:
-            st.warning(f"Ronde voltooid. Je hebt {len(st.session_state.fouten)} vragen onjuist beantwoord. Laten we deze herhalen.")
+            st.warning(f"Je hebt {len(st.session_state.fouten)} vragen onjuist beantwoord. Laten we deze herhalen.")
             if st.button("🔄 Start Herhaling"):
                 st.session_state.vragen_hussel = st.session_state.fouten.copy()
                 st.session_state.fouten = []
@@ -121,29 +141,30 @@ if menu == "📝 Doe de Quiz":
                 st.rerun()
         else:
             st.balloons()
-            st.success("🎉 Gefeliciteerd! Je hebt alle EHBO-vragen correct beantwoord.")
-            if st.button("🏁 Helemaal Opnieuw Beginnen"):
+            st.header("🏆 Toets Voltooid!")
+            st.success("Gefeliciteerd! Je hebt alle EHBO-scenario's correct afgehandeld.")
+            if st.button("🏁 Opnieuw beginnen"):
                 for key in ['vragen_hussel', 'index', 'fouten', 'fase', 'beantwoord']:
                     if key in st.session_state: del st.session_state[key]
                 st.rerun()
     
-    # De Vraag-interface
+    # Interface voor de vragen
     else:
         v = vragen[st.session_state.index]
-        titel_fase = "🔄 Herhaling" if st.session_state.fase == "herhalen" else "📖 Toets"
-        st.caption(f"{titel_fase} | Vraag {st.session_state.index + 1} van {len(vragen)}")
+        titel = "🔄 Herhaling" if st.session_state.fase == "herhalen" else "📖 Toets"
+        st.caption(f"{titel} | Vraag {st.session_state.index + 1} van {len(vragen)}")
         
         with st.container(border=True):
-            st.markdown(f"### {v['v']}")
+            st.markdown(f"#### {v['v']}")
 
         opties = [o.strip() for o in str(v["o"]).split(",")]
         
-        # MC Vraag
+        # Logica: Meerkeuze
         if v["type"] == "mc":
-            keuze = st.radio("Maak een keuze:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
+            keuze = st.radio("Selecteer het juiste antwoord:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
             
             if not st.session_state.beantwoord:
-                if st.button("Antwoord Bevestigen"):
+                if st.button("Bevestigen"):
                     st.session_state.beantwoord = True
                     st.rerun()
             else:
@@ -154,24 +175,24 @@ if menu == "📝 Doe de Quiz":
                     if v not in st.session_state.fouten:
                         st.session_state.fouten.append(v)
                 
-                with st.expander("📖 Bekijk Uitleg & Stappenplan", expanded=True):
-                    st.markdown(formatteer_stappenplan(v["u"]))
+                with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
+                    st.markdown(formatteer_uitleg(v["u"]))
                 
-                if st.button("Volgende Vraag ➡️"):
+                if st.button("Volgende ➡️"):
                     st.session_state.index += 1
                     st.session_state.beantwoord = False
                     st.rerun()
 
-        # Checkbox Vraag
+        # Logica: Checkboxen
         elif v["type"] == "check":
-            st.write("Selecteer alle juiste opties:")
+            st.write("Selecteer alle opties die van toepassing zijn:")
             gekozen = []
             for i, o in enumerate(opties):
                 if st.checkbox(o, key=f"ch_{i}_{st.session_state.index}", disabled=st.session_state.beantwoord):
                     gekozen.append(o)
             
             if not st.session_state.beantwoord:
-                if st.button("Antwoord Bevestigen"):
+                if st.button("Bevestigen"):
                     st.session_state.beantwoord = True
                     st.rerun()
             else:
@@ -183,30 +204,26 @@ if menu == "📝 Doe de Quiz":
                     if v not in st.session_state.fouten:
                         st.session_state.fouten.append(v)
                 
-                with st.expander("📖 Bekijk Uitleg & Stappenplan", expanded=True):
-                    st.markdown(formatteer_stappenplan(v["u"]))
+                with st.expander("📖 Bekijk uitleg en stappenplan", expanded=True):
+                    st.markdown(formatteer_uitleg(v["u"]))
                 
-                if st.button("Volgende Vraag ➡️"):
+                if st.button("Volgende ➡️"):
                     st.session_state.index += 1
                     st.session_state.beantwoord = False
                     st.rerun()
 
-# 7. Admin Sectie
+# 7. Admin: Vragen toevoegen
 elif menu == "➕ Voeg Vraag Toe":
-    st.title("Database Uitbreiden")
-    st.info("Nieuwe vragen worden direct opgeslagen in de gekoppelde Google Sheet.")
-    
+    st.title("Database Beheer")
     with st.form("add_form", clear_on_submit=True):
-        t = st.selectbox("Type Vraag", ["mc", "check"], help="MC: Eén antwoord mogelijk. Check: Meerdere antwoorden mogelijk.")
-        vraag_tekst = st.text_input("Vraagstelling of Casus")
-        opties_tekst = st.text_input("Alle opties (scheiden met een komma)")
-        antwoord_tekst = st.text_input("Het juiste antwoord (bij Check: alle juiste opties met komma)")
-        uitleg_tekst = st.text_area("Uitleg en Stappenplan (gebruik 1. 2. 3. voor de lijst)")
+        t = st.selectbox("Vraagtype", ["mc", "check"])
+        vraag_tekst = st.text_input("Vraagstelling")
+        opties_tekst = st.text_input("Opties (komma-gescheiden)")
+        antwoord_tekst = st.text_input("Juist antwoord (komma-gescheiden bij meerdere)")
+        uitleg_tekst = st.text_area("Uitleg (gebruik 1. 2. 3. voor stappen)")
         
-        if st.form_submit_button("Opslaan"):
+        if st.form_submit_button("Vraag Opslaan"):
             if vraag_tekst and opties_tekst and antwoord_tekst:
                 nieuwe_v = {"type": t, "v": vraag_tekst, "o": opties_tekst, "a": antwoord_tekst, "u": uitleg_tekst}
                 voeg_vraag_toe(nieuwe_v)
-                st.success("Vraag toegevoegd aan Google Sheets!")
-            else:
-                st.warning("Vul a.u.b. alle velden in.")
+                st.success("Vraag succesvol toegevoegd aan de lijst!")
