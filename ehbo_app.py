@@ -3,6 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import random
 import re
+import time
 import streamlit.components.v1 as components
 import extra_streamlit_components as stx
 from datetime import datetime, timedelta
@@ -10,9 +11,9 @@ from datetime import datetime, timedelta
 # 1. Pagina configuratie
 st.set_page_config(page_title="EHBO Expert", page_icon="🚑", layout="centered")
 
-# 2. Cookie Manager Initialisatie (Zonder cache decoratie)
+# 2. Cookie Manager Initialisatie (zonder cache, in session_state voor stabiliteit)
 if 'cookie_manager' not in st.session_state:
-    st.session_state.cookie_manager = stx.CookieManager()
+    st.session_state.cookie_manager = stx.CookieManager(key="ehbo_v1")
 
 cookie_manager = st.session_state.cookie_manager
 
@@ -25,14 +26,14 @@ st.markdown("""
             font-weight: bold; border: 2px solid #ff4b4b; 
             background-color: white; color: #ff4b4b;
         }
-        div[role='radiogroup'] { background-color: #f8f9fa; padding: 10px; border-radius: 10px; }
+        div[role='radiogroup'] { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #eee; }
     </style>
 """, unsafe_allow_html=True)
 
 def scroll_naar_boven():
     components.html("<script>window.parent.window.scrollTo({top: 0, behavior: 'smooth'});</script>", height=0)
 
-# 4. Hulpfuncties & Data
+# 4. Hulpfuncties & Woordenboek
 AFKORTINGEN = {
     "AED": "Automatische Externe Defibrillator", "FAST": "Face, Arm, Speech, Time",
     "RICE": "Rust, IJs, Compressie, Elevatie", "CVA": "Cerebro Vasculair Accident",
@@ -46,9 +47,11 @@ def formatteer_uitleg(tekst):
     for afk, bet in AFKORTINGEN.items():
         tekst = re.sub(rf"\b{afk}\b", f"{afk} ({bet})", tekst)
     tekst = re.sub(r"(Stappen.*?:)", r"\n\n### 📋 \1\n", tekst)
+    # Regex die getallen in 112 negeert maar 1. 2. 3. herkent
     tekst = re.sub(r"(?<!\d)([1-9])\.\s+", r"\n\1. ", tekst)
     return tekst
 
+# 5. Data laden
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl="5m")
@@ -56,19 +59,22 @@ def laad_data():
     df = conn.read()
     return df.dropna(subset=['type', 'v']).to_dict('records')
 
-# 5. Cookie & State Logica
-def save_state():
-    expires = datetime.now() + timedelta(days=1)
-    cookie_manager.set("ehbo_index", str(st.session_state.index), expires_at=expires)
-    cookie_manager.set("ehbo_fase", st.session_state.fase, expires_at=expires)
-
-# Wacht tot cookies geladen zijn (custom componenten hebben soms een fractie nodig)
-cookies = cookie_manager.get_all()
-saved_index = cookies.get("ehbo_index")
-saved_fase = cookies.get("ehbo_fase")
-
-# Initialiseer hussel en status
 data = laad_data()
+
+# 6. Cookie & State Logica
+def save_state():
+    """Slaat de voortgang veilig op in cookies."""
+    try:
+        expires = datetime.now() + timedelta(days=1)
+        cookie_manager.set("ehbo_idx", str(st.session_state.index), expires_at=expires, key="save_idx")
+        cookie_manager.set("ehbo_fse", st.session_state.fase, expires_at=expires, key="save_fse")
+    except:
+        pass
+
+# Haal cookies op
+cookies = cookie_manager.get_all()
+saved_index = cookies.get("ehbo_idx")
+saved_fase = cookies.get("ehbo_fse")
 
 if 'vragen_hussel' not in st.session_state:
     shuffled = data.copy()
@@ -79,17 +85,16 @@ if 'vragen_hussel' not in st.session_state:
     st.session_state.fouten = []
     st.session_state.beantwoord = False
 
-# 6. Sidebar & Reset
+# 7. Sidebar
 st.sidebar.title("🚑 EHBO Expert")
-
-if st.sidebar.button("🔄 Toets resetten"):
-    cookie_manager.delete("ehbo_index")
-    cookie_manager.delete("ehbo_fase")
+if st.sidebar.button("🔄 Toets volledig resetten"):
+    cookie_manager.delete("ehbo_idx", key="del_idx")
+    cookie_manager.delete("ehbo_fse", key="del_fse")
     if 'vragen_hussel' in st.session_state:
         del st.session_state.vragen_hussel
     st.rerun()
 
-# 7. Quiz Logica
+# 8. Quiz Logica
 vragen = st.session_state.vragen_hussel
 
 if st.session_state.index >= len(vragen):
@@ -104,9 +109,9 @@ if st.session_state.index >= len(vragen):
             st.rerun()
     else:
         st.balloons()
-        st.success("🏆 Alles voltooid!")
+        st.success("🏆 Toets voltooid! Je hebt alle scenario's doorlopen.")
         if st.button("Opnieuw beginnen"):
-            cookie_manager.delete("ehbo_index")
+            cookie_manager.delete("ehbo_idx", key="reset_idx")
             del st.session_state.vragen_hussel
             st.rerun()
 
@@ -123,8 +128,9 @@ elif vragen:
     opties = [o.strip() for o in str(v["o"]).split(",")]
     
     if v["type"] == "mc":
-        keuze = st.radio("Kies:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
+        keuze = st.radio("Kies het juiste antwoord:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
     else:
+        st.write("Selecteer alle juiste opties:")
         gekozen = [o for o in opties if st.checkbox(o, key=f"ch_{o}_{st.session_state.index}", disabled=st.session_state.beantwoord)]
 
     if not st.session_state.beantwoord:
@@ -132,12 +138,16 @@ elif vragen:
             st.session_state.beantwoord = True
             st.rerun()
     else:
-        is_correct = (keuze == v["a"]) if v["type"] == "mc" else (sorted(gekozen) == sorted([a.strip() for a in str(v["a"]).split(",")]))
+        # Check antwoord
+        if v["type"] == "mc":
+            correct = (keuze == v["a"])
+        else:
+            correct = (sorted(gekozen) == sorted([a.strip() for a in str(v["a"]).split(",")]))
         
-        if is_correct: 
+        if correct: 
             st.success("✅ Correct!")
         else:
-            st.error(f"❌ Onjuist. Correct: {v['a']}")
+            st.error(f"❌ Onjuist. Het juiste antwoord was: **{v['a']}**")
             if v not in st.session_state.fouten:
                 st.session_state.fouten.append(v)
         
@@ -148,5 +158,6 @@ elif vragen:
             st.session_state.index += 1
             st.session_state.beantwoord = False
             save_state()
+            time.sleep(0.1) # Geef de browser tijd om de cookie te schrijven
             scroll_naar_boven()
             st.rerun()
