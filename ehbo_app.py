@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 # 1. Pagina configuratie
 st.set_page_config(page_title="EHBO Expert", page_icon="🚑", layout="centered")
 
-# 2. Styling (Minimaal voor maximale snelheid)
+# 2. Styling voor snelheid en mobiel gebruik
 st.markdown("""
     <style>
         .stApp { background-color: white; }
@@ -18,81 +18,91 @@ st.markdown("""
             background-color: white; color: #ff4b4b;
         }
         div[role='radiogroup'] { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #eee; }
+        [data-testid="stSidebar"] { background-color: #fcfcfc !important; }
     </style>
 """, unsafe_allow_html=True)
 
 def scroll_naar_boven():
     components.html("<script>window.parent.window.scrollTo({top: 0, behavior: 'smooth'});</script>", height=0)
 
-# 3. Data laden & Hulpfuncties
-AFKORTINGEN = {"AED": "Defibrillator", "FAST": "Beroerte-test", "RICE": "Koelen/Rust"}
+# 3. Hulpfuncties & Woordenboek
+AFKORTINGEN = {
+    "AED": "Automatische Externe Defibrillator", "FAST": "Face, Arm, Speech, Time",
+    "RICE": "Rust, IJs, Compressie, Elevatie", "CVA": "Cerebro Vasculair Accident",
+    "ABC": "Airway, Breathing, Circulation", "SEH": "Spoedeisende Hulp",
+    "NVIC": "Nationaal Vergiftigingen Informatie Centrum", "CPR": "Cardiopulmonale Resuscitatie"
+}
 
 def formatteer_uitleg(tekst):
-    if not tekst or pd.isna(tekst): return "Geen info."
+    if not tekst or pd.isna(tekst): return "Geen informatie beschikbaar."
     tekst = str(tekst).strip()
+    for afk, bet in AFKORTINGEN.items():
+        tekst = re.sub(rf"\b{afk}\b", f"{afk} ({bet})", tekst)
     tekst = re.sub(r"(Stappen.*?:)", r"\n\n### 📋 \1\n", tekst)
+    # Zorg dat 1. 2. 3. op nieuwe regels staan (negeert 112)
     tekst = re.sub(r"(?<!\d)([1-9])\.\s+", r"\n\1. ", tekst)
     return tekst
 
+# 4. Data laden
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl="10m")
+@st.cache_data(ttl="5m")
 def laad_data():
     df = conn.read()
     if 'medisch' not in df.columns: df['medisch'] = None
     return df.dropna(subset=['type', 'v']).to_dict('records')
 
-# 4. URL-gebaseerde State Management (Vervangt Cookies)
-params = st.query_params
-
-# Haal staat uit URL of gebruik defaults
-u_idx = int(params.get("idx", 0))
-u_seed = int(params.get("seed", random.randint(1, 100000)))
-u_fse = params.get("fse", "normaal")
-
 data = laad_data()
 
-# Initialiseer hussel op basis van de URL-seed
-if 'vragen_hussel' not in st.session_state or st.session_state.get('current_seed') != u_seed:
+# 5. Session State Initialisatie (Husselen gebeurt alleen hier)
+if 'vragen_hussel' not in st.session_state:
     shuffled = data.copy()
-    random.seed(u_seed)
     random.shuffle(shuffled)
     st.session_state.vragen_hussel = shuffled
-    st.session_state.current_seed = u_seed
-    st.session_state.index = u_idx
-    st.session_state.fase = u_fse
+    st.session_state.index = 0
     st.session_state.fouten = []
+    st.session_state.fase = "normaal"
     st.session_state.beantwoord = False
 
-# 5. Navigatie & Reset
+# 6. Sidebar
 st.sidebar.title("🚑 EHBO Expert")
-if st.sidebar.button("🔄 Toets volledig resetten"):
-    st.query_params.clear()
-    for key in list(st.session_state.keys()): del st.session_state[key]
+
+if st.sidebar.button("🔄 Toets resetten"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.rerun()
 
-# Syllabus download (HTML)
+# Syllabus download
 if data:
-    html_content = f"<html><body><h1>EHBO Syllabus</h1>" + "".join([f"<h3>{v['v']}</h3><p>{v['u']}</p>" for v in data]) + "</body></html>"
-    st.sidebar.download_button("📥 Syllabus downloaden", html_content, "EHBO_Syllabus.html", "text/html")
+    syllabus_html = "<html><body style='font-family:sans-serif;'><h1>EHBO Syllabus</h1>"
+    for v in data:
+        syllabus_html += f"<h3>{v['v']}</h3><p>{v['u']}</p><hr>"
+    syllabus_html += "</body></html>"
+    st.sidebar.download_button("📥 Syllabus downloaden", syllabus_html, "EHBO_Syllabus.html", "text/html")
 
-# 6. Quiz Logica
+with st.sidebar.expander("📚 Woordenboek"):
+    for afk, bet in AFKORTINGEN.items(): 
+        st.markdown(f"**{afk}**: {bet}")
+
+# 7. Quiz Logica
 vragen = st.session_state.vragen_hussel
 
 if st.session_state.index >= len(vragen):
     if st.session_state.fouten:
-        st.warning(f"Ronde klaar! {len(st.session_state.fouten)} fouten.")
-        if st.button("🔄 Herhaal fouten"):
+        st.warning(f"Ronde klaar! Je hebt {len(st.session_state.fouten)} fouten gemaakt.")
+        if st.button("🔄 Herhaal onjuiste vragen"):
             st.session_state.vragen_hussel = st.session_state.fouten.copy()
-            st.session_state.fouten, st.session_state.index = [], 0
+            st.session_state.fouten = []
+            st.session_state.index = 0
             st.session_state.fase = "herhaling"
             st.session_state.beantwoord = False
             st.rerun()
     else:
         st.balloons()
-        st.success("🏆 Voltooid!")
+        st.success("🏆 Toets voltooid!")
         if st.button("Opnieuw beginnen"):
-            st.query_params.clear()
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
 
 elif vragen:
@@ -108,31 +118,42 @@ elif vragen:
     opties = [o.strip() for o in str(v["o"]).split(",")]
     
     if v["type"] == "mc":
-        keuze = st.radio("Antwoord:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
+        keuze = st.radio("Maak een keuze:", opties, key=f"mc_{st.session_state.index}", disabled=st.session_state.beantwoord)
     else:
-        gekozen = [o for o in opties if st.checkbox(o, key=f"ch_{o}_{st.session_state.index}", disabled=st.session_state.beantwoord)]
+        st.write("Selecteer alle juiste opties:")
+        gekozen = []
+        for i, o in enumerate(opties):
+            if st.checkbox(o, key=f"ch_{i}_{st.session_state.index}", disabled=st.session_state.beantwoord):
+                gekozen.append(o)
 
     if not st.session_state.beantwoord:
         if st.button("Antwoord Bevestigen"):
             st.session_state.beantwoord = True
             st.rerun()
     else:
-        correct = (keuze == v["a"]) if v["type"] == "mc" else (sorted(gekozen) == sorted([a.strip() for a in str(v["a"]).split(",")]))
-        if correct: st.success("✅ Correct!")
+        # Check antwoord
+        if v["type"] == "mc":
+            is_correct = (keuze == v["a"])
         else:
-            st.error(f"❌ Fout. Correct: **{v['a']}**")
-            if v not in st.session_state.fouten: st.session_state.fouten.append(v)
+            juiste_lijst = sorted([a.strip() for a in str(v["a"]).split(",")])
+            is_correct = (sorted(gekozen) == juiste_lijst)
         
-        with st.expander("📖 Uitleg", expanded=True):
+        if is_correct: 
+            st.success("✅ Correct!")
+        else:
+            st.error(f"❌ Onjuist. Het juiste antwoord was: **{v['a']}**")
+            if v not in st.session_state.fouten:
+                st.session_state.fouten.append(v)
+        
+        with st.expander("📖 Uitleg & Stappenplan", expanded=True):
             st.markdown(formatteer_uitleg(v["u"]))
             if v.get('medisch') and not pd.isna(v['medisch']):
                 st.markdown("---")
-                with st.popover("🔬 Medisch"): st.info(formatteer_uitleg(str(v['medisch'])))
+                with st.popover("🔬 Medische achtergrond"):
+                    st.info(formatteer_uitleg(str(v['medisch'])))
 
         if st.button("Volgende Vraag ➡️"):
             st.session_state.index += 1
             st.session_state.beantwoord = False
-            # Werk URL parameters bij voor persistentie
-            st.query_params.update(idx=st.session_state.index, seed=st.session_state.current_seed, fse=st.session_state.fase)
             scroll_naar_boven()
             st.rerun()
