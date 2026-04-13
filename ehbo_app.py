@@ -1,6 +1,6 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-import pd
+import pandas as pd
 import random
 import re
 import time
