@@ -10,23 +10,16 @@ from datetime import datetime, timedelta
 # 1. Pagina configuratie
 st.set_page_config(page_title="EHBO Expert", page_icon="🚑", layout="centered")
 
-# 2. Cookie Manager Initialisatie
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
+# 2. Cookie Manager Initialisatie (Zonder cache decoratie)
+if 'cookie_manager' not in st.session_state:
+    st.session_state.cookie_manager = stx.CookieManager()
 
-cookie_manager = get_cookie_manager()
+cookie_manager = st.session_state.cookie_manager
 
 # 3. Styling
 st.markdown("""
     <style>
         .stApp { background-color: white; color: #1f1f1f; }
-        button[kind="header"] {
-            background-color: #ff4b4b !important;
-            color: white !important;
-            border-radius: 8px !important;
-            width: 80px !important;
-        }
         .main .stButton button {
             width: 100%; border-radius: 12px; height: 3.5em; 
             font-weight: bold; border: 2px solid #ff4b4b; 
@@ -65,24 +58,22 @@ def laad_data():
 
 # 5. Cookie & State Logica
 def save_state():
-    # Sla index en fase op in cookies voor 1 dag
     expires = datetime.now() + timedelta(days=1)
     cookie_manager.set("ehbo_index", str(st.session_state.index), expires_at=expires)
     cookie_manager.set("ehbo_fase", st.session_state.fase, expires_at=expires)
 
-# Initialiseer data
+# Wacht tot cookies geladen zijn (custom componenten hebben soms een fractie nodig)
+cookies = cookie_manager.get_all()
+saved_index = cookies.get("ehbo_index")
+saved_fase = cookies.get("ehbo_fase")
+
+# Initialiseer hussel en status
 data = laad_data()
 
-# Haal waarden uit cookies
-saved_index = cookie_manager.get("ehbo_index")
-saved_fase = cookie_manager.get("ehbo_fase")
-
 if 'vragen_hussel' not in st.session_state:
-    # Bij eerste laad of hussel-reset: hussel de data
     shuffled = data.copy()
     random.shuffle(shuffled)
     st.session_state.vragen_hussel = shuffled
-    # Gebruik cookie waarde als die bestaat, anders 0
     st.session_state.index = int(saved_index) if saved_index else 0
     st.session_state.fase = saved_fase if saved_fase else "normaal"
     st.session_state.fouten = []
@@ -94,8 +85,8 @@ st.sidebar.title("🚑 EHBO Expert")
 if st.sidebar.button("🔄 Toets resetten"):
     cookie_manager.delete("ehbo_index")
     cookie_manager.delete("ehbo_fase")
-    # Verwijder hussel om nieuwe random volgorde te forceren
-    del st.session_state.vragen_hussel
+    if 'vragen_hussel' in st.session_state:
+        del st.session_state.vragen_hussel
     st.rerun()
 
 # 7. Quiz Logica
@@ -103,8 +94,8 @@ vragen = st.session_state.vragen_hussel
 
 if st.session_state.index >= len(vragen):
     if st.session_state.fouten:
-        st.warning(f"Ronde klaar met {len(st.session_state.fouten)} fouten.")
-        if st.button("🔄 Herhaal fouten"):
+        st.warning(f"Ronde klaar! Je hebt {len(st.session_state.fouten)} fouten gemaakt.")
+        if st.button("🔄 Herhaal onjuiste vragen"):
             st.session_state.vragen_hussel = st.session_state.fouten.copy()
             st.session_state.fouten, st.session_state.index = [], 0
             st.session_state.fase = "herhaling"
@@ -114,7 +105,7 @@ if st.session_state.index >= len(vragen):
     else:
         st.balloons()
         st.success("🏆 Alles voltooid!")
-        if st.button("Helemaal opnieuw beginnen"):
+        if st.button("Opnieuw beginnen"):
             cookie_manager.delete("ehbo_index")
             del st.session_state.vragen_hussel
             st.rerun()
@@ -150,12 +141,12 @@ elif vragen:
             if v not in st.session_state.fouten:
                 st.session_state.fouten.append(v)
         
-        with st.expander("📖 Uitleg", expanded=True):
+        with st.expander("📖 Uitleg & Stappenplan", expanded=True):
             st.markdown(formatteer_uitleg(v["u"]))
 
         if st.button("Volgende Vraag ➡️"):
             st.session_state.index += 1
             st.session_state.beantwoord = False
-            save_state() # Update de cookie voor de volgende vraag
+            save_state()
             scroll_naar_boven()
             st.rerun()
