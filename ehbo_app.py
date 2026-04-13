@@ -24,13 +24,7 @@ st.markdown(f"""
             box-shadow: 0px 4px 10px rgba(255, 75, 75, 0.3) !important;
             border: 2px solid white !important;
         }}
-        /* Tekst "MENU" toevoegen aan de knop via CSS */
-        button[kind="header"]::after {{
-            content: " MENU";
-            font-weight: bold;
-            font-size: 14px;
-        }}
-
+        
         /* Zijbalk & Knoppen */
         [data-testid="stSidebar"] {{ background-color: #fcfcfc !important; border-right: none; }}
         section[data-testid="stSidebar"] .stButton button {{
